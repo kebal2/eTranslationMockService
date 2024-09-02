@@ -19,8 +19,6 @@ public class TranslateController : ControllerBase
 {
     private readonly ICallbackService callbackService;
 
-    public static readonly Random Rnd = new Random();
-
     public TranslateController(ICallbackService callbackService)
     {
         this.callbackService = callbackService;
@@ -32,7 +30,7 @@ public class TranslateController : ControllerBase
         if (requestData is null) return "-30000";
 
         var random = new Random();
-        var requestCode = "0";
+        var requestCode = random.Next(100000, int.MaxValue).ToString();
         var dests = Array.Empty<string>();
         if (requestData.destinations is not null || !string.IsNullOrEmpty(requestData.requesterCallback)) dests = requestData.destinations?.httpDestinations ?? new[] { requestData.requesterCallback };
 
@@ -40,9 +38,6 @@ public class TranslateController : ControllerBase
         {
             string content;
             string decoded;
-
-            requestCode = random.Next(100000, int.MaxValue).ToString();
-
             string format = "text";
             if (requestData.documentToTranslateBase64 is not null)
             {
@@ -65,67 +60,61 @@ public class TranslateController : ControllerBase
                     content = $"{decoded}<h1>Should be translated to [{string.Join(", ", requestData.targetLanguages)}]</h1>".ToBase64();
                     break;
                 case "xhtml":
-                {
-                    // ids mezők elemeinek ahol van tartalom adat hozáfűzése
-                    var xhtml = XElement.Parse(decoded, LoadOptions.PreserveWhitespace);
-
-                    foreach (var elem in xhtml.Elements())
                     {
-                        elem.Value = $"{string.Join(", ", requestData.targetLanguages)} - {elem.Value}";
+                        // ids mezők elemeinek ahol van tartalom adat hozáfűzése
+                        var xhtml = XElement.Parse(decoded, LoadOptions.PreserveWhitespace);
+
+                        foreach (var elem in xhtml.Elements())
+                        {
+                            elem.Value = $"{string.Join(", ", requestData.targetLanguages)} - {elem.Value}";
+                        }
+
+                        content = xhtml.ToString().ToBase64();
+
+                        break;
                     }
-
-                    content = xhtml.ToString().ToBase64();
-
-                    break;
-                }
 
                 case "xml":
-                {
-                    // mezők tartalmához hozzáfűzni nyelvkódot
-                    var xml = XElement.Parse(decoded);
-
-                    foreach (var elem in xml.Elements())
                     {
-                        elem.Value = $"{string.Join(", ", requestData.targetLanguages)} - {elem.Value}";
+                        // mezők tartalmához hozzáfűzni nyelvkódot
+                        var xml = XElement.Parse(decoded);
+
+                        foreach (var elem in xml.Elements())
+                        {
+                            elem.Value = $"{string.Join(", ", requestData.targetLanguages)} - {elem.Value}";
+                        }
+
+                        content = xml.ToString().ToBase64();
+
+                        break;
                     }
-
-                    content = xml.ToString().ToBase64();
-
-                    break;
-                }
                 case "pdf":
-                {
-                    content = HandlePDF(requestData, decoded).ToBase64();
-                    break;
-                }
+                    {
+                        content = HandlePDF(requestData, decoded).ToBase64();
+                        break;
+                    }
                 case "application/pdf":
-                {
-                    content = HandlePDF(requestData, decoded).ToBase64();
-                    break;
-                }
+                    {
+                        content = HandlePDF(requestData, decoded).ToBase64();
+                        break;
+                    }
                 default:
                     break;
             }
 
             Debug.WriteLine(content);
 
-            var waitTime = Rnd.Next(4000);
-            Debug.WriteLine($"Random time: {waitTime}");
-
-            Thread.Sleep(TimeSpan.FromMilliseconds(waitTime));
-
             if (format == "text")
-                callbackService.AddDataToSend(new TextCallbackRequest(new Uri(destination), content, requestCode, requestData.externalReference, requestData.targetLanguages));
+                callbackService.AddDataToSend(new TextCallbackRequest(new Uri(destination), content, requestCode, requestData.targetLanguages));
             else
-                callbackService.AddDataToSend(new DocumentCallbackRequest(new Uri(destination), content, requestCode, requestData.externalReference, requestData.targetLanguages));
+                callbackService.AddDataToSend(new DocumentCallbackRequest(new Uri(destination), content, requestCode, requestData.targetLanguages));
         }
 
         return requestCode;
     }
 
     private static byte[] HandlePDF(TranslateRequest requestData, string decoded)
-    {
-        string content;
+    {        
         var pdf = new PdfDocument(Encoding.ASCII.GetBytes(decoded));
         PdfPageBase page = pdf.Pages.Add();
 
@@ -150,14 +139,12 @@ internal static class Base64Helper
 {
     public static string ToBase64(this string text)
     {
-        var base64String = Convert.ToBase64String(Encoding.UTF8.GetBytes(text));
-        return base64String;
+        return Convert.ToBase64String(Encoding.UTF8.GetBytes(text));
     }
 
     public static string ToBase64(this byte[] data)
     {
-        var base64String = Convert.ToBase64String(data, Base64FormattingOptions.InsertLineBreaks);
-        return base64String;
+        return Convert.ToBase64String(data);
     }
 
     public static string FromBase64(this string text)

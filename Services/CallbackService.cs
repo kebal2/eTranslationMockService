@@ -8,13 +8,12 @@ public interface ICallbackRequest
 {
     Uri Uri { get; }
     string RequestCode { get; }
-    string? ExternalReference { get; }
     string[] TargetLanguages { get; }
 }
 
-public record DocumentCallbackRequest(Uri Uri, string TranslatedDocumentsBase64, string RequestCode, string? ExternalReference, string[] TargetLanguages) : ICallbackRequest;
+public record DocumentCallbackRequest(Uri Uri, string TranslatedDocumentsBase64, string RequestCode, string[] TargetLanguages) : ICallbackRequest;
 
-public record TextCallbackRequest(Uri Uri, string TranslatedText, string RequestCode, string? ExternalReference, string[] TargetLanguages) : ICallbackRequest;
+public record TextCallbackRequest(Uri Uri, string TranslatedText, string RequestCode, string[] TargetLanguages) : ICallbackRequest;
 
 
 
@@ -28,6 +27,7 @@ public class CallbackService : ICallbackService, IDisposable
 {
     private readonly IHttpClientFactory httpClientFactory;
     private static readonly ConcurrentQueue<ICallbackRequest> DataToSend = new();
+    private static Random random = new();
 
     private bool running;
     private bool disposing;
@@ -37,7 +37,7 @@ public class CallbackService : ICallbackService, IDisposable
     {
         this.httpClientFactory = httpClientFactory;
 
-        Task.Run(() => SendData());
+        Task.Run(SendData);
     }
 
     public void AddDataToSend(DocumentCallbackRequest documentCallbackRequest)
@@ -58,15 +58,12 @@ public class CallbackService : ICallbackService, IDisposable
         {
             while (DataToSend.TryDequeue(out var callbackRequest))
             {
+                Thread.Sleep(random.Next(500));
                 using var httpClient = httpClientFactory.CreateClient();
                 foreach (var targetLanguage in callbackRequest.TargetLanguages)
                 {
                     var query = HttpUtility.ParseQueryString(callbackRequest.Uri.Query);
                     query["request-id"] = callbackRequest.RequestCode;
-
-                    if(!string.IsNullOrEmpty(callbackRequest.ExternalReference))
-                        query["external-reference"] = callbackRequest.ExternalReference;
-
                     query["target-language"] = targetLanguage;
 
                     StringContent sc = null;
@@ -74,10 +71,10 @@ public class CallbackService : ICallbackService, IDisposable
                     switch (callbackRequest)
                     {
                         case TextCallbackRequest tcr:
-                            query["translated-text"] = tcr.TranslatedText;
+                            query["translated-text"] = HttpUtility.UrlEncode(tcr.TranslatedText);
                             break;
                         case DocumentCallbackRequest dcr:
-                            sc = new StringContent(dcr.TranslatedDocumentsBase64, Encoding.UTF8);
+                            sc = new StringContent(HttpUtility.UrlEncode(dcr.TranslatedDocumentsBase64), Encoding.UTF8);
                             break;
                     }
 
@@ -91,8 +88,7 @@ public class CallbackService : ICallbackService, IDisposable
                     if (callbackRequest is DocumentCallbackRequest)
                         httpRequestMessage.Content = sc;
 
-
-                    var response = httpClient.Send(httpRequestMessage);
+                    using var response = httpClient.Send(httpRequestMessage);
 
                     var result = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
                     Console.WriteLine($"Response from {callbackRequest.Uri}: {result}");
