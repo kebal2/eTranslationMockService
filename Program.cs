@@ -9,7 +9,19 @@ builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
-builder.Services.AddHttpClient();
+builder.Services.ConfigureHttpClientDefaults(bb =>
+        bb.ConfigureHttpMessageHandlerBuilder(b =>
+        {
+            b.PrimaryHandler = new HttpClientHandler
+            {
+                ServerCertificateCustomValidationCallback = (_, _, _, _) => true
+            };
+        })
+    );
+
+builder
+    .Services
+    .AddHttpClient();
 
 builder.Services.AddSingleton<ICallbackService, CallbackService>();
 
