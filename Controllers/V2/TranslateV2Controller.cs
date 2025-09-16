@@ -1,7 +1,6 @@
 using System.Diagnostics;
 using System.Drawing;
 using System.Text;
-using System.Web;
 using System.Xml.Linq;
 
 using Microsoft.AspNetCore.Mvc;
@@ -9,12 +8,13 @@ using Microsoft.AspNetCore.Mvc;
 using Spire.Pdf;
 using Spire.Pdf.Graphics;
 
+using TranslateMock_dotnet;
 using TranslateMock_dotnet.Services;
 
-namespace TranslateMock_dotnet.Controllers;
+namespace eTranslationMockService.Controllers.V2;
 
 [ApiController]
-[Route("/api/v1/[controller]")]
+[Route("/api/v2/[controller]")]
 public class TranslateController : ControllerBase
 {
     private readonly ICallbackService callbackService;
@@ -24,7 +24,7 @@ public class TranslateController : ControllerBase
         this.callbackService = callbackService;
     }
 
-    [HttpPost(Name = "translate")]
+    [HttpPost(Name = "translate2")]
     public string Post(TranslateRequest? requestData)
     {
         if (requestData is null) return "-30000";
@@ -105,9 +105,9 @@ public class TranslateController : ControllerBase
             Debug.WriteLine(content);
 
             if (format == "text")
-                callbackService.AddDataToSend(new TextCallbackRequest(new Uri(destination), content, requestCode, requestData.targetLanguages));
+                this.callbackService.AddDataToSend(new TextCallbackRequest(new Uri(destination), content, requestCode, requestData.targetLanguages, 2));
             else
-                callbackService.AddDataToSend(new DocumentCallbackRequest(new Uri(destination), content, requestCode, requestData.targetLanguages));
+                this.callbackService.AddDataToSend(new DocumentCallbackRequest(new Uri(destination), content, requestCode, requestData.targetLanguages, 2));
         }
 
         return requestCode;
@@ -139,12 +139,12 @@ internal static class Base64Helper
 {
     public static string ToBase64(this string text)
     {
-        return Convert.ToBase64String(Encoding.UTF8.GetBytes(text));
+        return Convert.ToBase64String(Encoding.UTF8.GetBytes(text), Base64FormattingOptions.InsertLineBreaks);
     }
 
     public static string ToBase64(this byte[] data)
     {
-        return Convert.ToBase64String(data);
+        return Convert.ToBase64String(data, Base64FormattingOptions.InsertLineBreaks);
     }
 
     public static string FromBase64(this string text)
