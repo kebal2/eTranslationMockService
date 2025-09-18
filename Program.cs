@@ -1,4 +1,4 @@
-using TranslateMock_dotnet.Services;
+using eTranslationMockService.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 

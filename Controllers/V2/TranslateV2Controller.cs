@@ -2,14 +2,12 @@ using System.Diagnostics;
 using System.Drawing;
 using System.Text;
 using System.Xml.Linq;
-
+using eTranslationMockService.Controllers.V1;
+using eTranslationMockService.Services;
 using Microsoft.AspNetCore.Mvc;
 
 using Spire.Pdf;
 using Spire.Pdf.Graphics;
-
-using TranslateMock_dotnet;
-using TranslateMock_dotnet.Services;
 
 namespace eTranslationMockService.Controllers.V2;
 
@@ -25,31 +23,31 @@ public class TranslateController : ControllerBase
     }
 
     [HttpPost(Name = "translate2")]
-    public string Post(TranslateRequest? requestData)
+    public string Post(TranslateRequestv2? requestData)
     {
         if (requestData is null) return "-30000";
 
         var random = new Random();
         var requestCode = random.Next(100000, int.MaxValue).ToString();
-        var dests = Array.Empty<string>();
-        if (requestData.destinations is not null || !string.IsNullOrEmpty(requestData.requesterCallback)) dests = requestData.destinations?.httpDestinations ?? new[] { requestData.requesterCallback };
+        string destination;
+        if (requestData.deliveries is not null || !string.IsNullOrEmpty(requestData.deliveries.http)) 
 
-        foreach (var destination in dests)
         {
+            destination = requestData.deliveries.http;
             string content;
             string decoded;
             string format = "text";
-            if (requestData.documentToTranslateBase64 is not null)
+            if (requestData.documentToTranslate is not null)
             {
-                content = requestData.documentToTranslateBase64.content;
+                content = requestData.documentToTranslate.document.content;
                 decoded = content.FromBase64();
-                format = requestData.documentToTranslateBase64.format.ToLower();
+                format = requestData.documentToTranslate.document.format.ToLower();
             }
             else if (requestData.textToTranslate is not null)
             {
                 decoded = content = requestData.textToTranslate;
             }
-            else throw new InvalidOperationException();
+            else throw new InvalidOperationException("(documentToTranslate && textToTranslate) is null");
 
             switch (format)
             {
@@ -90,12 +88,12 @@ public class TranslateController : ControllerBase
                     }
                 case "pdf":
                     {
-                        content = HandlePDF(requestData, decoded).ToBase64();
+                        content = DocumentHelper.HandlePDF(requestData.targetLanguages, decoded).ToBase64();
                         break;
                     }
                 case "application/pdf":
                     {
-                        content = HandlePDF(requestData, decoded).ToBase64();
+                        content = DocumentHelper.HandlePDF(requestData.targetLanguages, decoded).ToBase64();
                         break;
                     }
                 default:
@@ -111,44 +109,5 @@ public class TranslateController : ControllerBase
         }
 
         return requestCode;
-    }
-
-    private static byte[] HandlePDF(TranslateRequest requestData, string decoded)
-    {        
-        var pdf = new PdfDocument(Encoding.ASCII.GetBytes(decoded));
-        PdfPageBase page = pdf.Pages.Add();
-
-        //Draw the text
-        page.Canvas.DrawString($"Hello, World! Translate to [{string.Join(", ", requestData.targetLanguages)}]",
-            new PdfFont(PdfFontFamily.Helvetica, 30f),
-            new PdfSolidBrush(Color.Black),
-            10, 10);
-
-        using var ms = new MemoryStream();
-
-        pdf.SaveToFile($"./test_{DateTime.Now.Ticks}.pdf");
-
-        pdf.SaveToStream(ms, FileFormat.DOCX);
-        System.IO.File.WriteAllBytes($"./test_{DateTime.Now.Ticks}.docx", ms.ToArray());
-
-        return ms.ToArray();
-    }
-}
-
-internal static class Base64Helper
-{
-    public static string ToBase64(this string text)
-    {
-        return Convert.ToBase64String(Encoding.UTF8.GetBytes(text), Base64FormattingOptions.InsertLineBreaks);
-    }
-
-    public static string ToBase64(this byte[] data)
-    {
-        return Convert.ToBase64String(data, Base64FormattingOptions.InsertLineBreaks);
-    }
-
-    public static string FromBase64(this string text)
-    {
-        return Encoding.UTF8.GetString(Convert.FromBase64String(text));
     }
 }

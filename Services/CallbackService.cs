@@ -2,7 +2,7 @@
 using System.Text;
 using System.Web;
 
-namespace TranslateMock_dotnet.Services;
+namespace eTranslationMockService.Services;
 
 public interface ICallbackRequest
 {
