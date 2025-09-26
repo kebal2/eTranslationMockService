@@ -25,7 +25,7 @@ public class TranslateController : ControllerBase
     [HttpPost(Name = "translate2")]
     public string Post(TranslateRequestv2? requestData)
     {
-        if (requestData is null) return "-30000";
+        if (requestData is null) return "{\"requestId\": -30000}";
 
         var random = new Random();
         var requestCode = random.Next(100000, int.MaxValue).ToString();
@@ -108,6 +108,6 @@ public class TranslateController : ControllerBase
                 this.callbackService.AddDataToSend(new DocumentCallbackRequest(new Uri(destination), content, requestCode, requestData.targetLanguages, 2));
         }
 
-        return requestCode;
+        return $"{{ \"requestId\":{requestCode} }}";
     }
 }
