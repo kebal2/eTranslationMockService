@@ -1,4 +1,5 @@
 using eTranslationMockService.Services;
+using Microsoft.AspNetCore.HttpLogging;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -23,7 +24,17 @@ builder
     .Services
     .AddHttpClient();
 
+builder
+    .Services
+    .AddHttpLogging(options =>
+{
+    options.LoggingFields = HttpLoggingFields.RequestPropertiesAndHeaders |
+                            HttpLoggingFields.RequestBody;
+});
+
 builder.Services.AddSingleton<ICallbackService, CallbackService>();
+
+
 
 var app = builder.Build();
 
@@ -37,6 +48,7 @@ if (app.Environment.IsDevelopment())
 // app.UseHttpsRedirection();
 
 // app.UseAuthorization();
+app.UseHttpLogging();
 
 app.MapControllers();
 
