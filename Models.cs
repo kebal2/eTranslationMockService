@@ -1,6 +1,6 @@
 namespace eTranslationMockService;
 
-public record CallerInformation(string application);
+public record CallerInformation(string? username, string? departmentNumber, string? institution, string? externalReference);
 
 public record Destinations(string[] httpDestinations);
 
@@ -8,7 +8,7 @@ public record Documentv1(string content, string format, string? filename);
 public record Documentv2(string? ftp, string? http, Documentv1? document);
 
 public record Destination(string? ftp, string? http);
-public record Notification(Destination success, Destination failure);
+public record Notification(Destination? success, Destination? failure);
 
 public record TranslateRequestv1(
     Documentv1? documentToTranslateBase64,
@@ -19,7 +19,8 @@ public record TranslateRequestv1(
     CallerInformation callerInformation,
     Destinations? destinations,
     string? requesterCallback,
-    string? domain);
+    string? domain,
+    string? externalReference);
 
 public record TranslateRequestv2(
     CallerInformation callerInformation,
@@ -36,4 +37,4 @@ public record TranslateRequestv2(
     bool? addDisclaimer,
     Notification notifications,
     Destination deliveries
-    );
+);
