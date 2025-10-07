@@ -86,7 +86,7 @@ public class CallbackService : ICallbackService, IDisposable
                 }
             }
 
-            Thread.Sleep(200);
+            Thread.Sleep(1000);
         }
 
         running = false;
