@@ -7,8 +7,9 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="FreeSpire.PDF" Version="10.2.0" />
+    <PackageReference Include="FreeSpire.PDF" Version="10.2.0" Condition="$([MSBuild]::IsOSPlatform('Windows'))" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="8.0.13" />
+    <PackageReference Include="QuestPDF" Version="2025.7.2" />
     <PackageReference Include="Swashbuckle.AspNetCore" Version="7.3.1" />
   </ItemGroup>
 

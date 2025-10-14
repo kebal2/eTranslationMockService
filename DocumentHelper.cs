@@ -1,29 +1,31 @@
 using System.Drawing;
 using System.Text;
-using Spire.Pdf;
-using Spire.Pdf.Graphics;
+
+using QuestPDF.Fluent;
+using QuestPDF.Helpers;
+using QuestPDF.Infrastructure;
 
 namespace eTranslationMockService;
 
 internal static class DocumentHelper
 {
-    internal static byte[] HandlePDF(string[] targetLanguages, string decoded)
+    internal static byte[] CreateTestPDF(string[] targetLanguages, string fileName)
     {
-        var pdf = new PdfDocument(Encoding.ASCII.GetBytes(decoded));
-        PdfPageBase page = pdf.Pages.Add();
-
-        //Draw the text
-        page.Canvas.DrawString($"Hello, World! Translate to [{string.Join(", ", targetLanguages)}]",
-            new PdfFont(PdfFontFamily.Helvetica, 30f),
-            new PdfSolidBrush(Color.Black),
-            10, 10);
+        QuestPDF.Settings.License = LicenseType.Community;
 
         using var ms = new MemoryStream();
+        Document.Create(container =>
+            {
+                container.Page(page =>
+                {
+                    page.Content()
+                        .Padding(50)
+                        .Text(text => { text.Span($"Hello, {fileName}! Translate to [{string.Join(", ", targetLanguages)}]").FontColor(Colors.Red.Accent4); });
+                });
+            })
+            .GeneratePdf(ms);
 
-        pdf.SaveToFile($"./test_{DateTime.Now.Ticks}.pdf");
-
-        pdf.SaveToStream(ms, FileFormat.DOCX);
-        System.IO.File.WriteAllBytes($"./test_{DateTime.Now.Ticks}.docx", ms.ToArray());
+        File.WriteAllBytes($"./{fileName}_{DateTime.Now.Ticks}.pdf", ms.ToArray());
 
         return ms.ToArray();
     }
