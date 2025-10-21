@@ -8,25 +8,39 @@ public interface ICallbackRequest
 {
     Uri Uri { get; }
     string RequestCode { get; }
+    string SourceLanguage { get; }
     string[] TargetLanguages { get; }
     int Version { get; }
 }
 
-public record DocumentCallbackRequest(Uri Uri, string TranslatedDocumentsBase64, string RequestCode, string[] TargetLanguages, int Version) : ICallbackRequest;
+public record DocumentCallbackRequest(
+    Uri Uri,
+    string TranslatedDocumentsBase64,
+    string RequestCode,
+    string? externalCode,
+    string SourceLanguage,
+    string[] TargetLanguages,
+    int Version) : ICallbackRequest;
 
-public record TextCallbackRequest(Uri Uri, string TranslatedText, string RequestCode, string[] TargetLanguages, int Version) : ICallbackRequest;
+public record TextCallbackRequest(
+    Uri Uri,
+    string TranslatedText,
+    string RequestCode,
+    string? externalCode,
+    string SourceLanguage,
+    string[] TargetLanguages,
+    int Version) : ICallbackRequest;
 
 public interface ICallbackService
 {
-    void AddDataToSend(DocumentCallbackRequest documentCallbackRequest);
-    void AddDataToSend(TextCallbackRequest textCallbackRequest);
+    void AddDataToSend(ICallbackRequest callbackRequest);
 }
 
 public class CallbackService : ICallbackService, IDisposable
 {
     private readonly IHttpClientFactory httpClientFactory;
-    private static readonly ConcurrentQueue<ICallbackRequest> DataToSend = new();
-    private static Random random = new();
+    private static readonly ConcurrentQueue<ICallbackRequest> dataToSend = new();
+    private static readonly Random random = new();
 
     private bool running;
     private bool disposing;
@@ -39,14 +53,9 @@ public class CallbackService : ICallbackService, IDisposable
         Task.Run(SendData);
     }
 
-    public void AddDataToSend(DocumentCallbackRequest documentCallbackRequest)
+    public void AddDataToSend(ICallbackRequest callbackRequest)
     {
-        DataToSend.Enqueue(documentCallbackRequest);
-    }
-
-    public void AddDataToSend(TextCallbackRequest textCallbackRequest)
-    {
-        DataToSend.Enqueue(textCallbackRequest);
+        dataToSend.Enqueue(callbackRequest);
     }
 
     private void SendData()
@@ -55,19 +64,19 @@ public class CallbackService : ICallbackService, IDisposable
 
         while (!disposing && !isDisposed)
         {
-            while (DataToSend.TryDequeue(out var callbackRequest))
+            while (dataToSend.TryDequeue(out var callbackRequest))
             {
                 Thread.Sleep(random.Next(500));
                 using var httpClient = httpClientFactory.CreateClient();
                 foreach (var targetLanguage in callbackRequest.TargetLanguages)
                 {
-                    StringContent sc = null;
+                    StringContent? sc = null;
 
                     var uriBuilder = BuildContent(callbackRequest, targetLanguage, ref sc);
 
                     using HttpRequestMessage httpRequestMessage = new(HttpMethod.Post, uriBuilder.Uri);
 
-                    if (callbackRequest is DocumentCallbackRequest)
+                    if (sc is not null)
                         httpRequestMessage.Content = sc;
 
                     using var response = httpClient.Send(httpRequestMessage);
@@ -77,7 +86,7 @@ public class CallbackService : ICallbackService, IDisposable
                 }
             }
 
-            Thread.Sleep(1000);
+            Thread.Sleep(200);
         }
 
         running = false;
@@ -96,6 +105,7 @@ public class CallbackService : ICallbackService, IDisposable
                     query["request-id"] = callbackRequest.RequestCode;
                     query["target-language"] = targetLanguage;
                     query["translated-text"] = tcr.TranslatedText;
+                    query["external-reference"] = tcr.externalCode;
                 }
                 else
                 {
@@ -105,7 +115,7 @@ public class CallbackService : ICallbackService, IDisposable
                         sourceLanguage = "en",
                         targetLanguage = targetLanguage,
                         translatedText = tcr.TranslatedText,
-                        externalReference = ""
+                        externalReference = tcr.externalCode
                     }));
                 }
 
@@ -117,6 +127,7 @@ public class CallbackService : ICallbackService, IDisposable
                 {
                     query["request-id"] = callbackRequest.RequestCode;
                     query["target-language"] = targetLanguage;
+                    query["external-reference"] = dcr.externalCode;
                     sc = new StringContent(dcr.TranslatedDocumentsBase64, Encoding.UTF8);
                 }
                 else
@@ -127,7 +138,7 @@ public class CallbackService : ICallbackService, IDisposable
                         sourceLanguage = "en",
                         targetLanguage = targetLanguage,
                         result = dcr.TranslatedDocumentsBase64,
-                        externalReference = "",
+                        externalReference = dcr.externalCode,
                         outputFormat = ""
                     }));
                 }
@@ -143,12 +154,12 @@ public class CallbackService : ICallbackService, IDisposable
         return uriBuilder;
     }
 
-    public void Dispose()
+    protected virtual void Dispose(bool d)
     {
-        if (!disposing)
+        if (!disposing && d)
         {
             disposing = true;
-            int i = 5;
+            int i = 10;
             while (running && --i > 0)
             {
                 Thread.Sleep(500);
@@ -156,5 +167,11 @@ public class CallbackService : ICallbackService, IDisposable
         }
 
         isDisposed = true;
+    }
+
+    public void Dispose()
+    {
+        Dispose(true);
+        GC.SuppressFinalize(this);
     }
 }

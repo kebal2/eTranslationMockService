@@ -34,8 +34,6 @@ builder
 
 builder.Services.AddSingleton<ICallbackService, CallbackService>();
 
-
-
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.
@@ -52,4 +50,4 @@ app.UseHttpLogging();
 
 app.MapControllers();
 
-app.Run();
+await app.RunAsync();

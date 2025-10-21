@@ -29,11 +29,12 @@ public class TranslateController : ControllerBase
 
         var random = new Random();
         var requestCode = random.Next(100000, int.MaxValue).ToString();
+        var externalCode = requestData.callerInformation.externalReference;
         string destination;
-        if (requestData.deliveries is not null || !string.IsNullOrEmpty(requestData.deliveries.http)) 
-
+        if (requestData.deliveries is not null || !string.IsNullOrEmpty(requestData.deliveries.http))
         {
             destination = requestData.deliveries.http;
+
             string content;
             string decoded;
             string format = "text";
@@ -102,10 +103,9 @@ public class TranslateController : ControllerBase
 
             Debug.WriteLine(content);
 
-            if (format == "text")
-                this.callbackService.AddDataToSend(new TextCallbackRequest(new Uri(destination), content, requestCode, requestData.targetLanguages, 2));
-            else
-                this.callbackService.AddDataToSend(new DocumentCallbackRequest(new Uri(destination), content, requestCode, requestData.targetLanguages, 2));
+            this.callbackService.AddDataToSend(format == "text"
+                ? new TextCallbackRequest(new Uri(destination), content, requestCode, externalCode, requestData.sourceLanguage, requestData.targetLanguages, 2)
+                : new DocumentCallbackRequest(new Uri(destination), content, requestCode, externalCode, requestData.sourceLanguage, requestData.targetLanguages, 2));
         }
 
         return $"{{ \"requestId\":{requestCode} }}";

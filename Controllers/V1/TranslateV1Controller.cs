@@ -23,6 +23,7 @@ public class TranslateController : ControllerBase
 
         var random = new Random();
         var requestCode = random.Next(100000, int.MaxValue).ToString();
+        var externalCode = requestData.externalReference;
         var dests = Array.Empty<string>();
         if (requestData.destinations is not null || !string.IsNullOrEmpty(requestData.requesterCallback)) dests = requestData.destinations?.httpDestinations ?? new[] { requestData.requesterCallback };
 
@@ -52,54 +53,53 @@ public class TranslateController : ControllerBase
                     content = $"{decoded}<h1>Should be translated to [{string.Join(", ", requestData.targetLanguages)}]</h1>".ToBase64();
                     break;
                 case "xhtml":
-                {
-                    // ids mezők elemeinek ahol van tartalom adat hozáfűzése
-                    var xhtml = XElement.Parse(decoded, LoadOptions.PreserveWhitespace);
-
-                    foreach (var elem in xhtml.Elements())
                     {
-                        elem.Value = $"{string.Join(", ", requestData.targetLanguages)} - {elem.Value}";
+                        // ids mezők elemeinek ahol van tartalom adat hozáfűzése
+                        var xhtml = XElement.Parse(decoded, LoadOptions.PreserveWhitespace);
+
+                        foreach (var elem in xhtml.Elements())
+                        {
+                            elem.Value = $"{string.Join(", ", requestData.targetLanguages)} - {elem.Value}";
+                        }
+
+                        content = xhtml.ToString().ToBase64();
+
+                        break;
                     }
-
-                    content = xhtml.ToString().ToBase64();
-
-                    break;
-                }
 
                 case "xml":
-                {
-                    // mezők tartalmához hozzáfűzni nyelvkódot
-                    var xml = XElement.Parse(decoded);
-
-                    foreach (var elem in xml.Elements())
                     {
-                        elem.Value = $"{string.Join(", ", requestData.targetLanguages)} - {elem.Value}";
+                        // mezők tartalmához hozzáfűzni nyelvkódot
+                        var xml = XElement.Parse(decoded);
+
+                        foreach (var elem in xml.Elements())
+                        {
+                            elem.Value = $"{string.Join(", ", requestData.targetLanguages)} - {elem.Value}";
+                        }
+
+                        content = xml.ToString().ToBase64();
+
+                        break;
                     }
-
-                    content = xml.ToString().ToBase64();
-
-                    break;
-                }
                 case "pdf":
-                {
-                    content = DocumentHelper.HandlePDF(requestData.targetLanguages, decoded).ToBase64();
-                    break;
-                }
+                    {
+                        content = DocumentHelper.HandlePDF(requestData.targetLanguages, decoded).ToBase64();
+                        break;
+                    }
                 case "application/pdf":
-                {
-                    content = DocumentHelper.HandlePDF(requestData.targetLanguages, decoded).ToBase64();
-                    break;
-                }
+                    {
+                        content = DocumentHelper.HandlePDF(requestData.targetLanguages, decoded).ToBase64();
+                        break;
+                    }
                 default:
                     break;
             }
 
             Debug.WriteLine(content);
 
-            if (format == "text")
-                this.callbackService.AddDataToSend(new TextCallbackRequest(new Uri(destination), content, requestCode, requestData.targetLanguages, 1));
-            else
-                this.callbackService.AddDataToSend(new DocumentCallbackRequest(new Uri(destination), content, requestCode, requestData.targetLanguages, 1));
+            this.callbackService.AddDataToSend(format == "text"
+                ? new TextCallbackRequest(new Uri(destination), content, requestCode, externalCode, requestData.sourceLanguage ,requestData.targetLanguages, 1)
+                : new DocumentCallbackRequest(new Uri(destination), content, requestCode, externalCode, requestData.sourceLanguage, requestData.targetLanguages, 1));
         }
 
         return requestCode;
