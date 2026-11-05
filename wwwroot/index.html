@@ -1,0 +1,397 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>eTranslation Mock Console</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f6f7f9;
+    --panel: #ffffff;
+    --border: #d9dee5;
+    --text: #1b1f24;
+    --muted: #5f6b7a;
+    --accent: #1f6feb;
+    --accent-text: #ffffff;
+    --ok: #1a7f37;
+    --warn: #b35900;
+    --code-bg: #f0f2f5;
+    --radius: 10px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f1116;
+      --panel: #171a21;
+      --border: #2a2f3a;
+      --text: #e6e8eb;
+      --muted: #9aa4b2;
+      --accent: #4c8dff;
+      --accent-text: #0b0d12;
+      --ok: #3fb950;
+      --warn: #d29922;
+      --code-bg: #0b0d12;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 24px 16px 48px;
+    background: var(--bg); color: var(--text);
+    font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  .wrap { max-width: 1180px; margin: 0 auto; }
+  header { margin-bottom: 20px; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  header p { margin: 0; color: var(--muted); font-size: 13px; }
+  .columns { display: grid; grid-template-columns: minmax(0, 420px) minmax(0, 1fr); gap: 20px; align-items: start; }
+  @media (max-width: 860px) { .columns { grid-template-columns: minmax(0, 1fr); } }
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; }
+  .panel h2, .bar h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0 0 12px; }
+  label { display: block; font-size: 12px; color: var(--muted); margin: 12px 0 4px; }
+  input, select, textarea, button {
+    font: inherit; color: var(--text); background: var(--panel);
+    border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; width: 100%;
+  }
+  textarea { min-height: 110px; resize: vertical; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
+  input[type=file] { padding: 6px; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .tabs { display: flex; gap: 6px; margin-bottom: 4px; }
+  .tabs button { width: auto; flex: 1; background: transparent; color: var(--muted); }
+  .tabs button[aria-selected=true] { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+  .send { margin-top: 16px; background: var(--accent); color: var(--accent-text); border-color: var(--accent); font-weight: 600; cursor: pointer; }
+  .send:disabled { opacity: .6; cursor: default; }
+  .ghost { width: auto; background: transparent; color: var(--muted); cursor: pointer; font-size: 13px; padding: 6px 10px; }
+  .bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
+  .bar h2 { margin: 0; }
+  pre {
+    background: var(--code-bg); border: 1px solid var(--border); border-radius: 8px;
+    padding: 10px; overflow: auto; max-height: 260px; margin: 8px 0 0;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; white-space: pre-wrap; word-break: break-word;
+  }
+  .entry { border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; margin-bottom: 10px; background: var(--panel); }
+  .entry.fresh { border-color: var(--accent); }
+  .request { border: 1px solid var(--border); border-radius: var(--radius); background: var(--panel); margin-bottom: 12px; overflow: hidden; }
+  .request.fresh { border-color: var(--accent); }
+  .request > .head { padding: 12px 12px 10px; border-bottom: 1px solid var(--border); }
+  .request > .body { padding: 10px 12px 12px; }
+  .route { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+  .summary { font-size: 13px; margin: 6px 0 0; }
+  .callback { border-left: 2px solid var(--border); padding: 2px 0 2px 12px; margin-top: 10px; }
+  .callback:first-child { margin-top: 0; }
+  .waiting { font-size: 12px; color: var(--muted); font-style: italic; }
+  .tag.err { color: #d1242f; border-color: #d1242f; }
+  .tag.idle { color: var(--warn); border-color: var(--warn); }
+  .section-label { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 18px 0 8px; }
+  .meta { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 8px; }
+  .tag { font-size: 11px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border); color: var(--muted); }
+  .tag.lang { color: var(--accent); border-color: var(--accent); }
+  .tag.fmt { color: var(--ok); border-color: var(--ok); }
+  .dl { display: inline-block; width: auto; text-decoration: none; background: var(--accent); color: var(--accent-text);
+        border-radius: 8px; padding: 6px 12px; font-size: 13px; font-weight: 600; }
+  .empty { color: var(--muted); font-size: 13px; padding: 20px 0; text-align: center; }
+  .status { font-size: 12px; color: var(--muted); margin-top: 10px; min-height: 18px; }
+  .status.error { color: var(--warn); }
+  details summary { cursor: pointer; font-size: 12px; color: var(--muted); }
+  .hint { font-size: 11px; color: var(--muted); margin-top: 4px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>eTranslation Mock Console</h1>
+    <p>Send a request to the local mock (API v2) and follow it through to the callback. Requests are logged as they arrive, callbacks are delivered to <code>/api/sink</code> on this same service.</p>
+  </header>
+
+  <div class="columns">
+    <form class="panel" id="form">
+      <h2>Request</h2>
+
+      <div class="row">
+        <div>
+          <label for="source">Source language</label>
+          <input id="source" value="EN">
+        </div>
+        <div>
+          <label for="targets">Target languages</label>
+          <input id="targets" value="HU" placeholder="HU, DE">
+        </div>
+      </div>
+
+      <label for="external">External reference</label>
+      <input id="external" value="console-test">
+
+      <label>Content</label>
+      <div class="tabs" role="tablist">
+        <button type="button" id="tab-text" role="tab" aria-selected="true">Text</button>
+        <button type="button" id="tab-file" role="tab" aria-selected="false">File</button>
+      </div>
+
+      <div id="pane-text">
+        <label for="text">Text to translate</label>
+        <textarea id="text">Hello world</textarea>
+        <label for="textFormat">Format</label>
+        <select id="textFormat">
+          <option value="text" selected>text</option>
+          <option value="html">html</option>
+          <option value="xml">xml</option>
+          <option value="xhtml">xhtml</option>
+        </select>
+        <p class="hint">html, xml and xhtml are sent as a document, plain text as <code>textToTranslate</code>.</p>
+      </div>
+
+      <div id="pane-file" hidden>
+        <label for="file">Document to translate</label>
+        <input type="file" id="file">
+        <label for="fileFormat">Format sent to the API</label>
+        <input id="fileFormat" placeholder="pdf">
+        <p class="hint">Filled in from the extension; overwrite it to test a mime type such as
+          <code>application/vnd.openxmlformats-officedocument.wordprocessingml.document</code>.</p>
+      </div>
+
+      <button class="send" id="send" type="submit">Send request</button>
+      <div class="status" id="status"></div>
+
+      <details id="sent" hidden>
+        <summary>Request and response</summary>
+        <pre id="sentBody"></pre>
+      </details>
+    </form>
+
+    <section>
+      <div class="bar">
+        <h2>Requests and callbacks</h2>
+        <button class="ghost" id="clear" type="button">Clear</button>
+      </div>
+      <div id="entries"><p class="empty">Nothing yet. Send a request, or point any client at this service.</p></div>
+    </section>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const sinkUrl = location.origin + '/api/sink';
+const activityUrl = location.origin + '/api/activity';
+let mode = 'text';
+let seen = new Set();
+let firstPoll = true;
+
+function status(message, isError) {
+  $('status').textContent = message;
+  $('status').className = isError ? 'status error' : 'status';
+}
+
+async function buildPayload() {
+  const targets = $('targets').value.split(',').map(s => s.trim()).filter(Boolean);
+  const source = $('source').value.trim() || 'EN';
+  const external = $('external').value.trim();
+
+  if (!targets.length) throw new Error('Give at least one target language.');
+
+  let document = null;
+  let plainText = null;
+
+  if (mode === 'file') {
+    const file = $('file').files[0];
+    if (!file) throw new Error('Pick a file first.');
+    document = { content: await toBase64(file), format: ($('fileFormat').value.trim() || 'pdf').toLowerCase(), filename: file.name };
+  } else {
+    const format = $('textFormat').value;
+    const content = $('text').value;
+    if (format === 'text') plainText = content;
+    else document = { content: btoa(unescape(encodeURIComponent(content))), format, filename: 'console.' + format };
+  }
+
+  return ['/api/v2/Translate', {
+    callerInformation: { username: 'console', externalReference: external || null },
+    documentToTranslate: document ? { document } : null,
+    textToTranslate: plainText,
+    sourceLanguage: source,
+    targetLanguages: targets,
+    notifications: {},
+    deliveries: { http: sinkUrl }
+  }];
+}
+
+$('form').onsubmit = async event => {
+  event.preventDefault();
+  $('send').disabled = true;
+  status('Sending...');
+
+  try {
+    const [route, payload] = await buildPayload();
+    const response = await fetch(route, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const body = await response.text();
+
+    const shown = { ...payload };
+    if (shown.documentToTranslate?.document?.content) shown.documentToTranslate.document.content = '<base64, ' + payload.documentToTranslate.document.content.length + ' chars>';
+
+    $('sent').hidden = false;
+    $('sentBody').textContent = 'POST ' + route + '\n' + JSON.stringify(shown, null, 2) + '\n\nHTTP ' + response.status + '\n' + body;
+
+    status(response.ok ? 'Sent. Follow it in the list on the right.' : 'The service answered HTTP ' + response.status, !response.ok);
+  } catch (error) {
+    status(error.message, true);
+  } finally {
+    $('send').disabled = false;
+  }
+};
+
+$('clear').onclick = async () => {
+  await fetch(activityUrl, { method: 'DELETE' });
+  seen = new Set();
+  render({ requests: [], orphans: [] });
+};
+
+function tag(text, className) {
+  if (!text) return '';
+  const span = document.createElement('span');
+  span.className = 'tag' + (className ? ' ' + className : '');
+  span.textContent = text;
+  return span.outerHTML;
+}
+
+function time(value) {
+  return new Date(value).toLocaleTimeString();
+}
+
+function bytes(count) {
+  return count === null || count === undefined ? '' : count.toLocaleString() + ' bytes';
+}
+
+function textNode(tagName, className, content) {
+  const node = document.createElement(tagName);
+  if (className) node.className = className;
+  node.textContent = content;
+  return node;
+}
+
+function callbackNode(callback) {
+  const node = document.createElement('div');
+  node.className = 'callback';
+
+  const meta = document.createElement('div');
+  meta.className = 'meta';
+  meta.innerHTML = [
+    tag(time(callback.receivedAt)),
+    tag(callback.targetLanguage, 'lang'),
+    tag(callback.outputFormat, 'fmt'),
+    tag(callback.externalReference)
+  ].join('');
+  node.append(meta);
+
+  const body = callback.text ?? callback.preview;
+  if (body) node.append(textNode('pre', null, body));
+
+  if (callback.documentBytes) {
+    node.append(textNode('p', 'hint', bytes(callback.documentBytes)));
+    const link = document.createElement('a');
+    link.className = 'dl';
+    link.href = sinkUrl + '/' + callback.id + '/download';
+    link.textContent = 'Download ' + callback.fileName;
+    node.append(link);
+  }
+
+  return node;
+}
+
+function inputSummary(request) {
+  if (request.inputKind === 'document') {
+    return [request.fileName || 'document', request.format, bytes(request.inputBytes)].filter(Boolean).join(' · ');
+  }
+  if (!request.format) return 'no content to translate';
+  return 'text · ' + bytes(request.inputBytes);
+}
+
+function statusTag(request) {
+  if (request.status === 'failed') return tag('failed', 'err');
+  if (request.status === 'no delivery destination') return tag('no destination', 'idle');
+  return tag(request.callbacks.length ? 'delivered' : 'queued', request.callbacks.length ? 'fmt' : 'idle');
+}
+
+function requestNode(request) {
+  const node = document.createElement('div');
+  node.className = 'request' + (!firstPoll && !seen.has(request.id) ? ' fresh' : '');
+
+  const head = document.createElement('div');
+  head.className = 'head';
+  head.append(textNode('div', 'route', 'POST /api/v2/Translate'));
+
+  const meta = document.createElement('div');
+  meta.className = 'meta';
+  meta.innerHTML = [
+    tag(time(request.receivedAt)),
+    tag((request.sourceLanguage || '?') + ' \u2192 ' + request.targetLanguages.join(', '), 'lang'),
+    tag('request ' + request.requestId),
+    tag(request.externalReference),
+    statusTag(request)
+  ].join('');
+  head.append(meta);
+  head.append(textNode('p', 'summary', inputSummary(request)));
+  if (request.error) head.append(textNode('p', 'hint', request.error));
+  node.append(head);
+
+  const body = document.createElement('div');
+  body.className = 'body';
+
+  const details = document.createElement('details');
+  details.append(textNode('summary', null, 'Request body'));
+  details.append(textNode('pre', null, request.requestJson));
+  body.append(details);
+
+  if (request.callbacks.length) {
+    request.callbacks.forEach(callback => body.append(callbackNode(callback)));
+  } else if (request.status === 'queued') {
+    body.append(textNode('p', 'waiting', 'Waiting for the callback...'));
+  }
+
+  node.append(body);
+
+  return node;
+}
+
+function render(activity) {
+  const host = $('entries');
+  const { requests, orphans } = activity;
+
+  if (!requests.length && !orphans.length) {
+    host.replaceChildren(textNode('p', 'empty', 'Nothing yet. Send a request, or point any client at this service.'));
+    return;
+  }
+
+  const children = requests.map(requestNode);
+
+  if (orphans.length) {
+    children.push(textNode('p', 'section-label', 'Callbacks without a logged request'));
+    orphans.forEach(callback => {
+      const node = document.createElement('div');
+      node.className = 'entry';
+      node.append(callbackNode(callback));
+      children.push(node);
+    });
+  }
+
+  host.replaceChildren(...children);
+
+  requests.forEach(request => seen.add(request.id));
+  firstPoll = false;
+}
+
+async function poll() {
+  try {
+    const response = await fetch(activityUrl);
+    if (response.ok) render(await response.json());
+  } catch {
+    // The service is restarting; the next tick will pick it up.
+  }
+}
+
+poll();
+setInterval(poll, 1000);
+setMode('text');
+</script>
+</body>
+</html>

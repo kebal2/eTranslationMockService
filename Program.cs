@@ -33,6 +33,8 @@ builder
 });
 
 builder.Services.AddSingleton<ICallbackService, CallbackService>();
+builder.Services.AddSingleton<ICallbackSink, CallbackSink>();
+builder.Services.AddSingleton<IRequestLog, RequestLog>();
 
 var app = builder.Build();
 
@@ -48,6 +50,13 @@ if (app.Environment.IsDevelopment())
 // app.UseAuthorization();
 app.UseHttpLogging();
 
+// The test page at / drives the mock from a browser.
+app.UseDefaultFiles();
+app.UseStaticFiles();
+
 app.MapControllers();
 
 await app.RunAsync();
+
+// Exposed so the integration tests can host the service with WebApplicationFactory.
+public partial class Program;
