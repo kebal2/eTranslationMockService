@@ -1,9 +1,10 @@
 using System.Diagnostics;
-using System.Drawing;
 using System.Text;
-using System.Xml.Linq;
-using eTranslationMockService.Controllers.V1;
+using System.Text.Encodings.Web;
+using System.Text.Json;
+
 using eTranslationMockService.Services;
+
 using Microsoft.AspNetCore.Mvc;
 
 namespace eTranslationMockService.Controllers.V2;
@@ -13,10 +14,12 @@ namespace eTranslationMockService.Controllers.V2;
 public class TranslateController : ControllerBase
 {
     private readonly ICallbackService callbackService;
+    private readonly IRequestLog requestLog;
 
-    public TranslateController(ICallbackService callbackService)
+    public TranslateController(ICallbackService callbackService, IRequestLog requestLog)
     {
         this.callbackService = callbackService;
+        this.requestLog = requestLog;
     }
 
     [HttpPost(Name = "translate2")]
@@ -26,105 +29,117 @@ public class TranslateController : ControllerBase
 
         var random = new Random();
         var requestCode = random.Next(100000, int.MaxValue).ToString();
-        var externalCode = requestData.callerInformation.externalReference;
-        string destination;
-        if (requestData.deliveries is not null || !string.IsNullOrEmpty(requestData.deliveries.http))
-        {
-            destination = requestData.deliveries.http;
+        var externalCode = requestData.callerInformation?.externalReference;
 
-            string content;
-            string decoded;
-            string format = "text";
-            if (requestData.documentToTranslate is not null)
+        var destination = requestData.deliveries?.http;
+        var incoming = requestData.documentToTranslate?.document;
+
+        try
+        {
+            if (string.IsNullOrEmpty(destination))
             {
-                content = requestData.documentToTranslate.document.content;
-                decoded = content.FromBase64();
-                format = requestData.documentToTranslate.document.format.ToLower();
+                Log(requestData, requestCode, incoming, null, 0, "no delivery destination", null);
+
+                return $"{{ \"requestId\":{requestCode} }}";
+            }
+
+            byte[] raw;
+            var format = "text";
+            string? fileName = null;
+
+            if (incoming is not null)
+            {
+                // Documents are binary: decode to bytes, never to a string.
+                raw = incoming.content.FromBase64ToBytes();
+                format = (incoming.format ?? "text").ToLowerInvariant();
+                fileName = incoming.filename;
             }
             else if (requestData.textToTranslate is not null)
             {
-                decoded = content = requestData.textToTranslate;
+                raw = Encoding.UTF8.GetBytes(requestData.textToTranslate);
             }
             else throw new InvalidOperationException("(documentToTranslate && textToTranslate) is null");
 
-            switch (format)
-            {
-                case "text":
-                    content = $"{decoded} - should be translated to [{string.Join(", ", requestData.targetLanguages)}]";
-                    break;
-                case "html":
-                    content = $"{decoded}<h1>Should be translated to [{string.Join(", ", requestData.targetLanguages)}]</h1>".ToBase64();
-                    break;
-                case "xhtml":
-                    {
-                        // ids mezők elemeinek ahol van tartalom adat hozáfűzése
-                        var xhtml = XElement.Parse(decoded, LoadOptions.PreserveWhitespace);
+            var translated = TranslationMock.Translate(raw, format, fileName, requestData.targetLanguages);
 
-                        foreach (var elem in xhtml.Elements())
-                        {
-                            elem.Value = $"{string.Join(", ", requestData.targetLanguages)} - {elem.Value}";
-                        }
+            Debug.WriteLine(translated.Content);
 
-                        content = xhtml.ToString().ToBase64();
+            this.callbackService.AddDataToSend(translated.IsText
+                ? new TextCallbackRequest(new Uri(destination), translated.Content, requestCode, externalCode, requestData.sourceLanguage, requestData.targetLanguages)
+                : new DocumentCallbackRequest(new Uri(destination), translated.Content, requestCode, externalCode, requestData.sourceLanguage, requestData.targetLanguages, translated.OutputFormat));
 
-                        break;
-                    }
+            Log(requestData, requestCode, incoming, translated, raw.Length, "queued", null);
+        }
+        catch (Exception ex)
+        {
+            Log(requestData, requestCode, incoming, null, 0, "failed", ex.Message);
 
-                case "xml":
-                    {
-                        // mezők tartalmához hozzáfűzni nyelvkódot
-                        var xml = XElement.Parse(decoded);
-
-                        foreach (var elem in xml.Elements())
-                        {
-                            elem.Value = $"{string.Join(", ", requestData.targetLanguages)} - {elem.Value}";
-                        }
-
-                        content = xml.ToString().ToBase64();
-
-                        break;
-                    }
-                case "pdf":
-                case "docx":
-                case "xlsx":
-                case "ppt":
-                case "application/pdf":
-                case "application/msword":
-                case "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
-                case "application/vnd.openxmlformats-officedocument.wordprocessingml.template":
-                case "application/vnd.ms-word.document.macroEnabled.12":
-                case "application/vnd.ms-word.template.macroEnabled.12":
-                case "application/vnd.ms-excel":
-                case "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":
-                case "application/vnd.openxmlformats-officedocument.spreadsheetml.template":
-                case "application/vnd.ms-excel.sheet.macroEnabled.12":
-                case "application/vnd.ms-excel.template.macroEnabled.12":
-                case "application/vnd.ms-excel.addin.macroEnabled.12":
-                case "application/vnd.ms-excel.sheet.binary.macroEnabled.12":
-                case "application/vnd.ms-powerpoint":
-                case "application/vnd.openxmlformats-officedocument.presentationml.presentation":
-                case "application/vnd.openxmlformats-officedocument.presentationml.template":
-                case "application/vnd.openxmlformats-officedocument.presentationml.slideshow":
-                case "application/vnd.ms-powerpoint.addin.macroEnabled.12":
-                case "application/vnd.ms-powerpoint.presentation.macroEnabled.12":
-                case "application/vnd.ms-powerpoint.template.macroEnabled.12":
-                case "application/vnd.ms-powerpoint.slideshow.macroEnabled.12":
-
-                    {
-                        content = DocumentHelper.CreateTestPDF(requestData.targetLanguages, requestData.documentToTranslate.document.filename).ToBase64();
-                        break;
-                    }
-                default:
-                    break;
-            }
-
-            Debug.WriteLine(content);
-
-            this.callbackService.AddDataToSend(format == "text"
-                ? new TextCallbackRequest(new Uri(destination), content, requestCode, externalCode, requestData.sourceLanguage, requestData.targetLanguages, 2)
-                : new DocumentCallbackRequest(new Uri(destination), content, requestCode, externalCode, requestData.sourceLanguage, requestData.targetLanguages, 2));
+            throw;
         }
 
         return $"{{ \"requestId\":{requestCode} }}";
+    }
+
+    private void Log(
+        TranslateRequestv2 request,
+        string requestCode,
+        DocumentContent? incoming,
+        TranslationMock.Result? translated,
+        int inputBytes,
+        string status,
+        string? error) =>
+        this.requestLog.Add(new RequestLogEntry(
+            Guid.NewGuid().ToString("N"),
+            DateTimeOffset.Now,
+            requestCode,
+            request.sourceLanguage,
+            request.targetLanguages ?? Array.Empty<string>(),
+            request.callerInformation?.externalReference,
+            incoming is not null ? "document" : "text",
+            incoming?.filename,
+            incoming?.format ?? (request.textToTranslate is not null ? "text" : null),
+            inputBytes,
+            request.deliveries?.http,
+            translated?.OutputFormat,
+            translated is null ? 0 : ResultSize(translated),
+            status,
+            error,
+            Describe(request)));
+
+    /// <summary>
+    /// Base64 carries three bytes per four characters, and <see cref="Base64Helper"/> breaks
+    /// it into lines, which are not part of the payload.
+    /// </summary>
+    private static int ResultSize(TranslationMock.Result translated) =>
+        translated.IsText
+            ? translated.Content.Length
+            : (int)(translated.Content.Count(c => !char.IsWhiteSpace(c)) * 3L / 4);
+
+    /// <summary>
+    /// The request as the service understood it, with the document content left out:
+    /// a few megabytes of base64 would drown the page.
+    /// </summary>
+    private static string Describe(TranslateRequestv2 request)
+    {
+        var document = request.documentToTranslate?.document;
+
+        return JsonSerializer.Serialize(new
+        {
+            request.callerInformation,
+            documentToTranslate = document is null
+                ? null
+                : new { document = new { content = $"<base64, {document.content?.Length ?? 0} chars>", document.format, document.filename } },
+            request.textToTranslate,
+            request.sourceLanguage,
+            request.targetLanguages,
+            request.domain,
+            request.outputFormat,
+            request.withQualityEstimate,
+            request.useLLM,
+            request.preserveTags,
+            request.addDisclaimer,
+            request.deliveries,
+            request.notifications
+        }, new JsonSerializerOptions { WriteIndented = true, Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping });
     }
 }
