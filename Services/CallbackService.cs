@@ -1,6 +1,5 @@
 ﻿using System.Collections.Concurrent;
 using System.Text;
-using System.Web;
 
 namespace eTranslationMockService.Services;
 
@@ -10,7 +9,6 @@ public interface ICallbackRequest
     string RequestCode { get; }
     string SourceLanguage { get; }
     string[] TargetLanguages { get; }
-    int Version { get; }
 }
 
 public record DocumentCallbackRequest(
@@ -20,7 +18,7 @@ public record DocumentCallbackRequest(
     string? externalCode,
     string SourceLanguage,
     string[] TargetLanguages,
-    int Version) : ICallbackRequest;
+    string? OutputFormat = null) : ICallbackRequest;
 
 public record TextCallbackRequest(
     Uri Uri,
@@ -28,8 +26,7 @@ public record TextCallbackRequest(
     string RequestCode,
     string? externalCode,
     string SourceLanguage,
-    string[] TargetLanguages,
-    int Version) : ICallbackRequest;
+    string[] TargetLanguages) : ICallbackRequest;
 
 public interface ICallbackService
 {
@@ -70,14 +67,10 @@ public class CallbackService : ICallbackService, IDisposable
                 using var httpClient = httpClientFactory.CreateClient();
                 foreach (var targetLanguage in callbackRequest.TargetLanguages)
                 {
-                    StringContent? sc = null;
-
-                    var uriBuilder = BuildContent(callbackRequest, targetLanguage, ref sc);
-
-                    using HttpRequestMessage httpRequestMessage = new(HttpMethod.Post, uriBuilder.Uri);
-
-                    if (sc is not null)
-                        httpRequestMessage.Content = sc;
+                    using HttpRequestMessage httpRequestMessage = new(HttpMethod.Post, callbackRequest.Uri)
+                    {
+                        Content = BuildContent(callbackRequest, targetLanguage)
+                    };
 
                     using var response = httpClient.Send(httpRequestMessage);
 
@@ -92,67 +85,34 @@ public class CallbackService : ICallbackService, IDisposable
         running = false;
     }
 
-    private static UriBuilder BuildContent(ICallbackRequest callbackRequest, string targetLanguage, ref StringContent? sc)
-    {
-        var query = HttpUtility.ParseQueryString(callbackRequest.Uri.Query);
-
-        switch (callbackRequest)
+    /// <summary>
+    /// The callback body eTranslation posts for one target language.
+    /// </summary>
+    internal static StringContent BuildContent(ICallbackRequest callbackRequest, string targetLanguage) =>
+        callbackRequest switch
         {
-            case TextCallbackRequest tcr:
+            TextCallbackRequest tcr => JsonContent(new
             {
-                if (tcr.Version == 1)
-                {
-                    query["request-id"] = callbackRequest.RequestCode;
-                    query["target-language"] = targetLanguage;
-                    query["translated-text"] = tcr.TranslatedText;
-                    query["external-reference"] = tcr.externalCode;
-                }
-                else
-                {
-                    sc = new StringContent(System.Text.Json.JsonSerializer.Serialize(new
-                    {
-                        requestId = callbackRequest.RequestCode,
-                        sourceLanguage = "en",
-                        targetLanguage = targetLanguage,
-                        translatedText = tcr.TranslatedText,
-                        externalReference = tcr.externalCode
-                    }));
-                }
-
-                break;
-            }
-            case DocumentCallbackRequest dcr:
+                requestId = callbackRequest.RequestCode,
+                sourceLanguage = callbackRequest.SourceLanguage,
+                targetLanguage = targetLanguage,
+                translatedText = tcr.TranslatedText,
+                externalReference = tcr.externalCode
+            }),
+            DocumentCallbackRequest dcr => JsonContent(new
             {
-                if (dcr.Version == 1)
-                {
-                    query["request-id"] = callbackRequest.RequestCode;
-                    query["target-language"] = targetLanguage;
-                    query["external-reference"] = dcr.externalCode;
-                    sc = new StringContent(dcr.TranslatedDocumentsBase64, Encoding.UTF8);
-                }
-                else
-                {
-                    sc = new StringContent(System.Text.Json.JsonSerializer.Serialize(new
-                    {
-                        requestId = callbackRequest.RequestCode,
-                        sourceLanguage = "en",
-                        targetLanguage = targetLanguage,
-                        result = dcr.TranslatedDocumentsBase64,
-                        externalReference = dcr.externalCode,
-                        outputFormat = ""
-                    }));
-                }
-
-                break;
-            }
-        }
-
-        UriBuilder uriBuilder = new(callbackRequest.Uri)
-        {
-            Query = query.ToString()
+                requestId = callbackRequest.RequestCode,
+                sourceLanguage = callbackRequest.SourceLanguage,
+                targetLanguage = targetLanguage,
+                result = dcr.TranslatedDocumentsBase64,
+                externalReference = dcr.externalCode,
+                outputFormat = dcr.OutputFormat ?? string.Empty
+            }),
+            _ => throw new InvalidOperationException($"Unknown callback request: {callbackRequest.GetType().Name}")
         };
-        return uriBuilder;
-    }
+
+    private static StringContent JsonContent(object payload) =>
+        new(System.Text.Json.JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
 
     protected virtual void Dispose(bool d)
     {
