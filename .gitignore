@@ -17,3 +17,5 @@
 obj
 bin
 *.csproj.user
+/*.pdf
+/*.DotSettings.user
