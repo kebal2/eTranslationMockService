@@ -63,6 +63,9 @@
   .ghost { width: auto; background: transparent; color: var(--muted); cursor: pointer; font-size: 13px; padding: 6px 10px; }
   .bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
   .bar h2 { margin: 0; }
+  .bar .tools { display: flex; align-items: center; gap: 8px; }
+  .bar .tools label { margin: 0; white-space: nowrap; }
+  .bar .tools select { width: auto; padding: 5px 8px; font-size: 13px; }
   pre {
     background: var(--code-bg); border: 1px solid var(--border); border-radius: 8px;
     padding: 10px; overflow: auto; max-height: 260px; margin: 8px 0 0;
@@ -160,7 +163,16 @@
     <section>
       <div class="bar">
         <h2>Requests and callbacks</h2>
-        <button class="ghost" id="clear" type="button">Clear</button>
+        <div class="tools">
+          <label for="level">Service status</label>
+          <select id="level" title="What GET /api/status reports, and how long callbacks take">
+            <option value="0">0 · Normal service</option>
+            <option value="1">1 · Heavy load (50–100 s)</option>
+            <option value="2">2 · Critical load (2–5 min)</option>
+            <option value="3">3 · Blocked (callbacks held)</option>
+          </select>
+          <button class="ghost" id="clear" type="button">Clear</button>
+        </div>
       </div>
       <div id="entries"><p class="empty">Nothing yet. Send a request, or point any client at this service.</p></div>
     </section>
@@ -171,6 +183,7 @@
 const $ = id => document.getElementById(id);
 const sinkUrl = location.origin + '/api/sink';
 const activityUrl = location.origin + '/api/activity';
+const statusUrl = location.origin + '/api/status';
 let mode = 'text';
 let seen = new Set();
 let firstPoll = true;
@@ -246,6 +259,26 @@ $('clear').onclick = async () => {
   render({ requests: [], orphans: [] });
 };
 
+$('level').onchange = async event => {
+  const response = await fetch(statusUrl, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ level: Number(event.target.value) })
+  });
+  if (response.ok) showLevel(await response.json());
+};
+
+function showLevel(status) {
+  if (document.activeElement !== $('level')) $('level').value = String(status.level);
+}
+
+function deliveryHint(delivery) {
+  if (!delivery) return 'Waiting for the callback...';
+  if (delivery.held) return 'Held: the service is blocked. The callback is scheduled once the status drops.';
+  const seconds = Math.max(0, Math.round((new Date(delivery.dueAt) - Date.now()) / 1000));
+  return seconds > 1 ? 'Callback due in ' + seconds + ' s.' : 'Waiting for the callback...';
+}
+
 function tag(text, className) {
   if (!text) return '';
   const span = document.createElement('span');
@@ -309,7 +342,8 @@ function inputSummary(request) {
 function statusTag(request) {
   if (request.status === 'failed') return tag('failed', 'err');
   if (request.status === 'no delivery destination') return tag('no destination', 'idle');
-  return tag(request.callbacks.length ? 'delivered' : 'queued', request.callbacks.length ? 'fmt' : 'idle');
+  if (request.callbacks.length) return tag('delivered', 'fmt');
+  return tag(request.delivery && request.delivery.held ? 'held' : 'queued', 'idle');
 }
 
 function requestNode(request) {
@@ -345,7 +379,7 @@ function requestNode(request) {
   if (request.callbacks.length) {
     request.callbacks.forEach(callback => body.append(callbackNode(callback)));
   } else if (request.status === 'queued') {
-    body.append(textNode('p', 'waiting', 'Waiting for the callback...'));
+    body.append(textNode('p', 'waiting', deliveryHint(request.delivery)));
   }
 
   node.append(body);
@@ -384,6 +418,8 @@ async function poll() {
   try {
     const response = await fetch(activityUrl);
     if (response.ok) render(await response.json());
+    const status = await fetch(statusUrl);
+    if (status.ok) showLevel(await status.json());
   } catch {
     // The service is restarting; the next tick will pick it up.
   }

@@ -35,6 +35,7 @@ builder
 builder.Services.AddSingleton<ICallbackService, CallbackService>();
 builder.Services.AddSingleton<ICallbackSink, CallbackSink>();
 builder.Services.AddSingleton<IRequestLog, RequestLog>();
+builder.Services.AddSingleton<IServiceStatus, ServiceStatus>();
 
 var app = builder.Build();
 
