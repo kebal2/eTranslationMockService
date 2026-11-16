@@ -1,5 +1,4 @@
-﻿using System.Collections.Concurrent;
-using System.Text;
+﻿using System.Text;
 
 namespace eTranslationMockService.Services;
 
@@ -31,58 +30,95 @@ public record TextCallbackRequest(
 public interface ICallbackService
 {
     void AddDataToSend(ICallbackRequest callbackRequest);
+
+    /// <summary>
+    /// The delivery still waiting for <paramref name="requestCode"/>, null once it went out.
+    /// </summary>
+    PendingDelivery? Pending(string requestCode);
 }
 
+/// <summary>
+/// Posts the callbacks when the <see cref="DeliverySchedule"/> says they are due, so the
+/// delays follow the level the status endpoint reports.
+/// </summary>
 public class CallbackService : ICallbackService, IDisposable
 {
+    private static readonly TimeSpan PollInterval = TimeSpan.FromMilliseconds(250);
+
     private readonly IHttpClientFactory httpClientFactory;
-    private static readonly ConcurrentQueue<ICallbackRequest> dataToSend = new();
-    private static readonly Random random = new();
+    private readonly IServiceStatus status;
+    private readonly ILogger<CallbackService> logger;
+    private readonly DeliverySchedule schedule = new();
+    private readonly CancellationTokenSource stopping = new();
+    private readonly Task worker;
 
-    private bool running;
-    private bool disposing;
-    private bool isDisposed;
-
-    public CallbackService(IHttpClientFactory httpClientFactory)
+    public CallbackService(IHttpClientFactory httpClientFactory, IServiceStatus status, ILogger<CallbackService> logger)
     {
         this.httpClientFactory = httpClientFactory;
+        this.status = status;
+        this.logger = logger;
 
-        Task.Run(SendData);
+        worker = Task.Run(SendData);
     }
 
     public void AddDataToSend(ICallbackRequest callbackRequest)
     {
-        dataToSend.Enqueue(callbackRequest);
+        var delivery = schedule.Add(callbackRequest, status.Level, DateTimeOffset.Now);
+
+        logger.LogInformation(
+            "Callback for request {RequestCode} queued at {Level}, {Due}",
+            callbackRequest.RequestCode,
+            delivery.QueuedAt,
+            delivery.DueAt is { } due ? $"due at {due:HH:mm:ss}" : "held until the service is unblocked");
     }
 
-    private void SendData()
+    public PendingDelivery? Pending(string requestCode) => schedule.Find(requestCode);
+
+    private async Task SendData()
     {
-        running = true;
-
-        while (!disposing && !isDisposed)
+        while (!stopping.IsCancellationRequested)
         {
-            while (dataToSend.TryDequeue(out var callbackRequest))
+            foreach (var callbackRequest in schedule.TakeDue(status.Level, DateTimeOffset.Now))
             {
-                Thread.Sleep(random.Next(500));
-                using var httpClient = httpClientFactory.CreateClient();
-                foreach (var targetLanguage in callbackRequest.TargetLanguages)
-                {
-                    using HttpRequestMessage httpRequestMessage = new(HttpMethod.Post, callbackRequest.Uri)
-                    {
-                        Content = BuildContent(callbackRequest, targetLanguage)
-                    };
-
-                    using var response = httpClient.Send(httpRequestMessage);
-
-                    var result = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
-                    Console.WriteLine($"Response from {callbackRequest.Uri}: {result}");
-                }
+                await Send(callbackRequest);
             }
 
-            Thread.Sleep(1000);
+            try
+            {
+                await Task.Delay(PollInterval, stopping.Token);
+            }
+            catch (OperationCanceledException)
+            {
+            }
         }
+    }
 
-        running = false;
+    /// <summary>
+    /// One unreachable destination must not stop the deliveries queued behind it.
+    /// </summary>
+    private async Task Send(ICallbackRequest callbackRequest)
+    {
+        using var httpClient = httpClientFactory.CreateClient();
+
+        foreach (var targetLanguage in callbackRequest.TargetLanguages)
+        {
+            try
+            {
+                using HttpRequestMessage httpRequestMessage = new(HttpMethod.Post, callbackRequest.Uri)
+                {
+                    Content = BuildContent(callbackRequest, targetLanguage)
+                };
+
+                using var response = await httpClient.SendAsync(httpRequestMessage, stopping.Token);
+
+                var result = await response.Content.ReadAsStringAsync(stopping.Token);
+                logger.LogInformation("Response from {Uri}: {Result}", callbackRequest.Uri, result);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException || !stopping.IsCancellationRequested)
+            {
+                logger.LogWarning(ex, "Callback for request {RequestCode} to {Uri} failed", callbackRequest.RequestCode, callbackRequest.Uri);
+            }
+        }
     }
 
     /// <summary>
@@ -114,24 +150,19 @@ public class CallbackService : ICallbackService, IDisposable
     private static StringContent JsonContent(object payload) =>
         new(System.Text.Json.JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
 
-    protected virtual void Dispose(bool d)
-    {
-        if (!disposing && d)
-        {
-            disposing = true;
-            int i = 10;
-            while (running && --i > 0)
-            {
-                Thread.Sleep(500);
-            }
-        }
-
-        isDisposed = true;
-    }
-
     public void Dispose()
     {
-        Dispose(true);
+        stopping.Cancel();
+
+        try
+        {
+            worker.Wait(TimeSpan.FromSeconds(5));
+        }
+        catch (AggregateException)
+        {
+        }
+
+        stopping.Dispose();
         GC.SuppressFinalize(this);
     }
 }

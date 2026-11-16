@@ -14,11 +14,13 @@ public class ActivityController : ControllerBase
 {
     private readonly IRequestLog requestLog;
     private readonly ICallbackSink sink;
+    private readonly ICallbackService callbackService;
 
-    public ActivityController(IRequestLog requestLog, ICallbackSink sink)
+    public ActivityController(IRequestLog requestLog, ICallbackSink sink, ICallbackService callbackService)
     {
         this.requestLog = requestLog;
         this.sink = sink;
+        this.callbackService = callbackService;
     }
 
     [HttpGet]
@@ -47,6 +49,7 @@ public class ActivityController : ControllerBase
             status = entry.Status,
             error = entry.Error,
             requestJson = entry.RequestJson,
+            delivery = Delivery(entry.RequestId),
             callbacks = byRequest[entry.RequestId].Select(CallbackView.Project)
         });
 
@@ -59,6 +62,15 @@ public class ActivityController : ControllerBase
 
         return Ok(new { requests, orphans });
     }
+
+    /// <summary>
+    /// When the callback of a queued request is due, or that it is held by a blocked
+    /// service. Null once it went out.
+    /// </summary>
+    private object? Delivery(string requestId) =>
+        this.callbackService.Pending(requestId) is { } pending
+            ? new { queuedAtLevel = (int)pending.QueuedAt, dueAt = pending.DueAt, held = pending.DueAt is null }
+            : null;
 
     [HttpDelete]
     public IActionResult Clear()

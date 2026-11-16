@@ -64,6 +64,7 @@ public class ActivityEndpointTests : IClassFixture<MockServiceFactory>
         Assert.Equal("txt", request.GetProperty("outputFormat").GetString());
         Assert.Equal("http://localhost:9999/callback", request.GetProperty("destination").GetString());
         Assert.Equal(JsonValueKind.Null, request.GetProperty("error").ValueKind);
+        Assert.True(request.TryGetProperty("delivery", out _));
     }
 
     [Fact]

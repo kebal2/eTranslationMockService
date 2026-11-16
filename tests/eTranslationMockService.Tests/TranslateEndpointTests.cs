@@ -37,6 +37,8 @@ public class RecordingCallbackService : ICallbackService
     public ConcurrentQueue<ICallbackRequest> Requests { get; } = new();
 
     public void AddDataToSend(ICallbackRequest callbackRequest) => Requests.Enqueue(callbackRequest);
+
+    public PendingDelivery? Pending(string requestCode) => null;
 }
 
 public class TranslateEndpointTests : IClassFixture<MockServiceFactory>
